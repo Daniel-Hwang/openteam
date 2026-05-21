@@ -124,9 +124,10 @@ export function createExternalModelsView(deps: ExternalModelsViewDependencies): 
     try {
       await deps.testExternalModel(model.id)
       button.textContent = ui('测试通过')
-    } catch (error) {
+    } catch (error: any) {
       button.textContent = originalText
-      deps.showError(error instanceof Error ? error.message : String(error))
+      const message = error?.friendlyMessage ?? (error instanceof Error ? error.message : String(error))
+      deps.showError(message)
     } finally {
       window.setTimeout(() => {
         button.disabled = false

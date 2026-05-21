@@ -60,8 +60,10 @@ function startStatusHeartbeat(): void {
 
   setInterval(() => {
     try {
-      const currentStatus = siteAdapter.checkStatus()
+      const currentStatus = siteAdapter.checkStatus?.()
       
+      if (!currentStatus) return
+
       // Only report if the status or detail has changed to avoid spamming the background
       if (
         !lastReportedStatus || 

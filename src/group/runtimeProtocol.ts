@@ -1,4 +1,5 @@
 import type { ChatSite, GroupRole, OpenTeamStore, RoleStatus } from './types'
+import type { SiteStatus } from '../content/sites/types'
 
 export type RuntimeRoleStatus =
   | 'opening'

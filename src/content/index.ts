@@ -9,6 +9,7 @@ import { readResyncReplyText } from './reportableReply'
 import { contentLog as log, sendRuntimeMessage, type ContentRuntimeMessage } from './runtimeClient'
 import { createRoleSession } from './roleSession'
 import { getActiveChatSiteAdapter } from './sites'
+import type { SiteStatusInfo } from './sites/types'
 
 const OPEN_TEAM_LOADED_KEY = '__OPENTEAM_LOADED__'
 
@@ -16,6 +17,7 @@ const siteAdapter = getActiveChatSiteAdapter()
 
 let replyObserver: ReplyObserverController | undefined
 let conversationMonitor: ConversationMonitor | undefined
+let lastReportedStatus: SiteStatusInfo | undefined
 
 const roleSession = createRoleSession({
   siteAdapter,
@@ -51,6 +53,35 @@ function collectPromptDiagnostics(): Record<string, unknown> {
 
 function sendBackgroundMessage<T>(message: RoleToBackgroundMessage): Promise<T> {
   return sendRuntimeMessage<T>(message, log)
+}
+
+function startStatusHeartbeat(): void {
+  const HEARTBEAT_INTERVAL_MS = 5000
+
+  setInterval(() => {
+    try {
+      const currentStatus = siteAdapter.checkStatus?.()
+      
+      if (!currentStatus) return
+
+      // Only report if the status or detail has changed to avoid spamming the background
+      if (
+        !lastReportedStatus || 
+        currentStatus.status !== lastReportedStatus.status || 
+        currentStatus.detail !== lastReportedStatus.detail
+      ) {
+        lastReportedStatus = currentStatus
+        sendBackgroundMessage({
+          type: 'TEAM_SITE_STATUS_UPDATE',
+          siteId: siteAdapter.id,
+          status: currentStatus.status,
+          detail: currentStatus.detail,
+        }).catch(error => log.warn('status-heartbeat:report-failed', { error: error instanceof Error ? error.message : String(error) }))
+      }
+    } catch (error) {
+      log.warn('status-heartbeat:check-failed', { error: error instanceof Error ? error.message : String(error) })
+    }
+  }, HEARTBEAT_INTERVAL_MS)
 }
 
 async function fillAndSend(content: string, autoSend = true): Promise<void> {
@@ -220,8 +251,8 @@ function handleSendPromptMessage(message: Extract<BackgroundToRoleMessage, { typ
         )
       }
     })
-    .then(() => sendBackgroundMessage(promptStatusMessage('generating', promptChatId, promptRoleId)))
     .then(() => {
+      sendBackgroundMessage(promptStatusMessage('generating', promptChatId, promptRoleId))
       replyObserver?.startReplyPolling(message.messageId, message.replyAttemptId)
       log.info('message:send-prompt:ok', { messageId: message.messageId })
       sendResponse({ ok: true, messageId: message.messageId })
@@ -261,6 +292,7 @@ function startOpenTeam(): void {
 
   conversationMonitor?.start()
   replyObserver?.startReplyReporting()
+  startStatusHeartbeat()
 }
 
 function bootWhenReady(): void {

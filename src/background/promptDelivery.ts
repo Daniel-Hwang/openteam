@@ -9,7 +9,7 @@ export interface PromptDelivery {
   message: SendPromptMessage
 }
 
-export type PromptSender = (delivery: PromptDelivery) => Promise<void>
+export type PromptSender = (delivery: PromptDelivery, isTest?: boolean) => Promise<void>
 
 export interface PromptSenderDependencies {
   log: {
@@ -19,7 +19,19 @@ export interface PromptSenderDependencies {
 }
 
 export function createPromptSender({ log }: PromptSenderDependencies): PromptSender {
-  return async delivery => {
+  return async (delivery, isTest = false) => {
+    if (isTest) {
+      log.info('prompt:send:test-mode', {
+        chatId: delivery.message.chatId,
+        roleId: delivery.roleId,
+        messageId: delivery.message.messageId,
+      })
+      // In test mode, we do not send the prompt to the iframe.
+      // The actual mock response is handled by the orchestration runtime 
+      // which manually injects a dummy message and advances the run.
+      return
+    }
+
     log.info('prompt:send:start', {
       chatId: delivery.message.chatId,
       roleId: delivery.roleId,
@@ -44,6 +56,7 @@ export function createPromptSender({ log }: PromptSenderDependencies): PromptSen
         response,
       })
     } catch (error) {
+      const reason = (error instanceof Error && error.message.includes('Could not establish connection')) ? 'SEND_FAILED' : 'UNKNOWN'
       log.warn('prompt:send:failed', {
         chatId: delivery.message.chatId,
         roleId: delivery.roleId,
@@ -51,6 +64,7 @@ export function createPromptSender({ log }: PromptSenderDependencies): PromptSen
         tabId: delivery.tabId,
         frameId: delivery.frameId,
         error: error instanceof Error ? error.message : String(error),
+        reason,
       })
       throw error
     }

@@ -125,6 +125,62 @@ describe('background message handlers', () => {
     }))
   })
 
+  it('allows @all delivery when manual mention routing is required', async () => {
+    vi.resetModules()
+    let draftStore: OpenTeamStore | undefined
+    vi.doMock('./storeAccess', async importOriginal => {
+      const actual = await importOriginal<typeof import('./storeAccess')>()
+      return {
+        ...actual,
+        mutateStore: vi.fn(async (mutator: (store: OpenTeamStore) => unknown) => {
+          const store = createStoreWithReadyRole()
+          store.chatsById['chat-1'].requireManualMention = true
+          const result = await mutator(store)
+          draftStore = store
+          return { store, result }
+        }),
+      }
+    })
+
+    const { createMessageHandlers } = await import('./messageHandlers')
+    const binding: RuntimeFrameBinding = { chatId: 'chat-1', roleId: 'role-1', tabId: 101, frameId: 7, ready: true, lastSeenAt: 0 }
+    const sendPrompt = vi.fn()
+    const routes = createMessageHandlers({
+      broadcastStoreUpdated: vi.fn(),
+      getChatStatusFromRoles: () => 'ready',
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      newId: vi.fn((prefix: string) => `${prefix}-1`),
+      now: vi.fn(() => 100),
+      runtimeFrames: {
+        bind: vi.fn(),
+        getByAddress: vi.fn(),
+        getByRole: vi.fn(() => binding),
+      },
+      sendRoleMessage: vi.fn(),
+      sendError: vi.fn(),
+      sendPrompt,
+    })
+
+    const sendRoute = routes.find(route => route.type === 'GROUP_MESSAGE_SEND')
+    const response = await sendRoute?.handler({ type: 'GROUP_MESSAGE_SEND', chatId: 'chat-1', raw: '@all 帮我评审一下' }, {})
+
+    expect(response).toMatchObject({
+      ok: true,
+      message: {
+        content: '帮我评审一下',
+        targetRoleIds: ['role-1'],
+        mentionsAll: true,
+        deliveryStatus: { 'role-1': 'pending' },
+      },
+      deliveries: [{ roleId: 'role-1' }],
+    })
+    expect(sendPrompt).toHaveBeenCalled()
+    expect(draftStore?.messagesById['msg-1']).toMatchObject({
+      targetRoleIds: ['role-1'],
+      status: 'pending',
+    })
+  })
+
   it('ignores role status messages without identity instead of surfacing a delivery error', async () => {
     vi.resetModules()
     vi.doMock('./storeAccess', async importOriginal => {

@@ -48,6 +48,20 @@ export interface MessagesView {
   renderMessages(): void
 }
 
+function getDiagnosticText(reason: string): string {
+  const normalized = reason.toLowerCase()
+  if (normalized === 'send_failed') return '⚠️ 发送失败，请检查 AI 窗口是否开启或尝试刷新页面。'
+  if (normalized === 'response_not_found') return '⚠️ 未检测到回复，可能是 AI 响应过慢或 DOM 结构已变更。'
+  if (normalized === 'timeout') return '⚠️ 回复超时了，请尝试重新发送。'
+  if (normalized === 'site_blocked') return '⚠️ 站点阻断，请检查登录状态或处理 Cookie 弹窗。'
+  return `回复失败：${reason}`
+}
+
+function isStructuredFailureReason(value: string): boolean {
+  const normalized = value.trim().toLowerCase()
+  return normalized === 'send_failed' || normalized === 'response_not_found' || normalized === 'timeout' || normalized === 'site_blocked'
+}
+
 export function createMessagesView(deps: MessagesViewDependencies): MessagesView {
   let markMenu: HTMLElement | undefined
   let selectedMark: { message: GroupMessage; text: string; startOffset: number; endOffset: number; rect: DOMRect; color: MessageHighlightColor } | undefined
@@ -182,6 +196,8 @@ export function createMessagesView(deps: MessagesViewDependencies): MessagesView
     }
     if (message.type === 'assistant' && message.status === 'pending' && !message.content.trim()) {
       body.textContent = '正在回复中 '
+    } else if (message.type === 'assistant' && message.status === 'error' && isStructuredFailureReason(message.content)) {
+      renderPlainMessageBody(body, getDiagnosticText(message.content))
     } else if (shouldRenderMarkdownMessage(message)) {
       renderMarkdownMessageBody(body, message.content)
     } else {

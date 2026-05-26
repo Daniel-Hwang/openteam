@@ -13,6 +13,8 @@ export type RoleStatus = 'pending' | 'loading' | 'ready' | 'thinking' | 'stopped
 
 export type DeliveryStatus = 'pending' | 'sent' | 'received' | 'error'
 
+export type ReplyFailureReason = 'SEND_FAILED' | 'RESPONSE_NOT_FOUND' | 'TIMEOUT' | 'SITE_BLOCKED' | 'UNKNOWN'
+
 export type RoleTemplateType = 'builtin' | 'custom'
 
 export interface OpenTeamStore {
@@ -210,6 +212,7 @@ export interface GroupChat {
   messageIds: string[]
   nextMessageSeq: number
   status: ChatStatus
+  requireManualMention?: boolean
   createdAt: number
   updatedAt: number
 }

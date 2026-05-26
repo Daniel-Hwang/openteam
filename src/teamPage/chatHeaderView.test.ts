@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { GroupChat, GroupMessage, GroupRole, RoomMode } from '../group/types'
 import { createTeamPageState } from './appState'
 import { createChatHeaderView } from './chatHeaderView'
@@ -30,6 +30,34 @@ describe('chat header view', () => {
     expect(harness.chatSubtitleEl.textContent).toBe('Collaborative mode · 1 members · 1 messages')
     expect(harness.togglePeopleDrawerEl.textContent).toBe('Members 1')
   })
+
+  it('toggles manual mention routing for collaborative chats', async () => {
+    const harness = createHarness('collaborative')
+
+    harness.view.renderChatHeader()
+
+    const toggle = harness.headerActionsEl.querySelector<HTMLButtonElement>('.manual-mention-toggle')
+    expect(toggle).not.toBeNull()
+    expect(toggle?.hidden).toBe(false)
+    expect(toggle?.textContent).toBe('@ 触发回复')
+    expect(toggle?.getAttribute('aria-pressed')).toBe('false')
+
+    toggle?.click()
+    await Promise.resolve()
+
+    expect(harness.runCommand).toHaveBeenCalledWith('GROUP_CHAT_UPDATE', { chatId: 'chat-1', requireManualMention: true })
+
+    harness.chat.requireManualMention = true
+    harness.view.renderChatHeader()
+
+    expect(toggle?.textContent).toBe('仅 @ 回复')
+    expect(toggle?.getAttribute('aria-pressed')).toBe('true')
+
+    harness.chat.mode = 'independent'
+    harness.view.renderChatHeader()
+
+    expect(toggle?.hidden).toBe(true)
+  })
 })
 
 function createHarness(mode: RoomMode, language: 'zh-CN' | 'en' = 'zh-CN') {
@@ -49,8 +77,11 @@ function createHarness(mode: RoomMode, language: 'zh-CN' | 'en' = 'zh-CN') {
   const chatStatusEl = document.createElement('span')
   const togglePeopleDrawerEl = document.createElement('button')
   const openOrchestrationEl = document.createElement('button')
+  const headerActionsEl = document.createElement('div')
+  headerActionsEl.append(togglePeopleDrawerEl)
   const roles: GroupRole[] = []
   const messages: GroupMessage[] = []
+  const runCommand = vi.fn(async () => undefined)
   const view = createChatHeaderView({
     state: createTeamPageState(),
     chatTitleEl,
@@ -62,6 +93,7 @@ function createHarness(mode: RoomMode, language: 'zh-CN' | 'en' = 'zh-CN') {
     getCurrentChat: () => chat,
     getCurrentRoles: () => roles,
     getCurrentMessages: () => messages,
+    runCommand,
   })
-  return { chat, roles, messages, chatStatusEl, chatSubtitleEl, togglePeopleDrawerEl, openOrchestrationEl, view }
+  return { chat, roles, messages, chatStatusEl, chatSubtitleEl, togglePeopleDrawerEl, openOrchestrationEl, headerActionsEl, runCommand, view }
 }

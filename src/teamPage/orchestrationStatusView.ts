@@ -115,7 +115,15 @@ export function createOrchestrationStatusView(deps: OrchestrationStatusViewDepen
     dragGrip.className = 'orchestration-status-drag-grip'
     dragGrip.textContent = '⋮⋮'
     const titleText = document.createElement('span')
-    titleText.textContent = STATUS_LABELS[run.status]
+    
+    let statusLabel = STATUS_LABELS[run.status]
+    if (run.status === 'running' && run.updatedAt) {
+      const staleThreshold = 10 * 60 * 1000
+      if (Date.now() - run.updatedAt > staleThreshold) {
+        statusLabel = '编排运行超时'
+      }
+    }
+    titleText.textContent = statusLabel
     title.append(dragGrip, titleText)
     header.append(title)
 
@@ -234,6 +242,10 @@ export function createOrchestrationStatusView(deps: OrchestrationStatusViewDepen
       }
       actions.append(actionButton('跳过节点', 'btn-ghost', () => runAction('GROUP_ORCHESTRATION_SKIP_STAGE', { chatId: chat.id, stageId: current.stageId })))
       actions.append(actionButton('重新运行', 'btn-ghost', () => rerunAction(chat, run, flow)))
+    }
+
+    if (run.status === 'running' && run.updatedAt && (Date.now() - run.updatedAt > 10 * 60 * 1000)) {
+      actions.append(actionButton('强制重置', 'btn-danger', () => runAction('GROUP_ORCHESTRATION_STOP', { chatId: chat.id })))
     }
     return actions.childElementCount > 0 ? actions : undefined
   }

@@ -1103,7 +1103,7 @@ select:focus {
   background: transparent;
   color: var(--text);
   cursor: pointer;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.35;
   text-align: left;
 }
@@ -1117,7 +1117,7 @@ select:focus {
   overflow: hidden;
   margin-top: 3px;
   color: #788692;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1134,7 +1134,7 @@ select:focus {
   padding: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 740;
   white-space: nowrap;
 }
@@ -1209,6 +1209,12 @@ select:focus {
 
 #open-orchestration[hidden] {
   display: none;
+}
+
+.manual-mention-toggle[aria-pressed="true"] {
+  border-color: rgba(90, 198, 150, 0.45);
+  background: rgba(90, 198, 150, 0.16);
+  color: #c7f7df;
 }
 
 .theme-switch {
@@ -1844,12 +1850,12 @@ select:focus {
 
 .message-body {
   margin-top: 0;
-  padding: 9px 13px 10px;
+  padding: 12px 16px 12px;
   white-space: pre-wrap;
   word-break: break-word;
   color: inherit;
-  font-size: 14px;
-  line-height: 1.58;
+  font-size: 16px;
+  line-height: 1.6;
 }
 
 .message-body.markdown-body {

@@ -833,7 +833,7 @@ describe('group store', () => {
       expect(newRole.systemPrompt).toBe(sourceRole.systemPrompt)
       expect(newRole.avatarColor).toBe(sourceRole.avatarColor)
       expect(newRole.modelSource).toBe(sourceRole.modelSource)
-      expect(newRole.chatSite).toBe(sourceRole.chatSite)
+      expect(newRole.chatSite).toBeUndefined()
       expect(newRole.externalModelId).toBe(sourceRole.externalModelId)
       expect(newRole.chatId).toBe(newChat.id)
     })

@@ -81,9 +81,15 @@ export function createMessageHandlers(deps: MessageHandlersDependencies): Backgr
       const roles = getChatRoles(store, chat)
       const parsed = parseGroupMentions(raw, roles, { ...roleMentionLabelOptionsFromSettings(store.settings), defaultTarget: 'none' })
       if (!parsed.ok) throw new Error(parsed.error)
-      deps.log.debug('message-send:parsed-targets', { chatId: chat.id, targetRoleIds: parsed.targetRoleIds })
 
-      const targetRoles = parsed.targetRoleIds.map(roleId => store.rolesById[roleId]).filter((role): role is GroupRole => Boolean(role))
+      let finalTargetRoleIds = parsed.targetRoleIds
+      const hasManualRoute = parsed.mentionedRoleIds.length > 0 || Boolean(parsed.mentionsAll) || Boolean(parsed.orchestrationTarget)
+      if (chat.requireManualMention && !hasManualRoute) {
+        finalTargetRoleIds = []
+      }
+      deps.log.debug('message-send:parsed-targets', { chatId: chat.id, targetRoleIds: finalTargetRoleIds })
+
+      const targetRoles = finalTargetRoleIds.map(roleId => store.rolesById[roleId]).filter((role): role is GroupRole => Boolean(role))
       const unavailable = targetRoles.filter(role => {
         if (isExternalModelRole(role)) return !getExternalModelForRole(store, role)
         return !isRoleDeliverable(role, deps.runtimeFrames.getByRole(chat.id, role.id), timestamp)
@@ -128,13 +134,13 @@ export function createMessageHandlers(deps: MessageHandlersDependencies): Backgr
         seq: chat.nextMessageSeq,
         type: 'user',
         content: parsed.content,
-        targetRoleIds: parsed.targetRoleIds,
+        targetRoleIds: finalTargetRoleIds,
         mentionedRoleIds: parsed.mentionedRoleIds,
         mentionsAll: parsed.mentionsAll,
         references: reference ? [reference] : undefined,
         createdAt: timestamp,
-        status: parsed.targetRoleIds.length > 0 ? 'pending' : 'received',
-        deliveryStatus: Object.fromEntries(parsed.targetRoleIds.map(roleId => [roleId, unavailable.some(role => role.id === roleId) ? 'error' : 'pending'])),
+        status: finalTargetRoleIds.length > 0 ? 'pending' : 'received',
+        deliveryStatus: Object.fromEntries(finalTargetRoleIds.map(roleId => [roleId, unavailable.some(role => role.id === roleId) ? 'error' : 'pending'])),
       }
       updateUserMessageDeliveryStatus(userMessage)
 
@@ -143,7 +149,7 @@ export function createMessageHandlers(deps: MessageHandlersDependencies): Backgr
       chat.nextMessageSeq += 1
       deps.log.info('message-send:stored', { chatId: chat.id, messageId: userMessage.id, targetCount: parsed.targetRoleIds.length })
       chat.updatedAt = timestamp
-      if (parsed.targetRoleIds.length === 0) {
+      if (finalTargetRoleIds.length === 0) {
         return { message: userMessage, deliveries: [], externalDeliveries: [] }
       }
 
@@ -1288,6 +1294,11 @@ function upsertFailedAssistantAfterPrompt(
 }
 
 function roleFailureReplyContent(reason: string): string {
+  const normalized = reason.toLowerCase()
+  if (normalized === 'send_failed') return '⚠️ 发送失败，请检查 AI 窗口是否开启或尝试刷新页面。\n\n可以点击下方的重新回复按钮再试一次。'
+  if (normalized === 'response_not_found') return '⚠️ 未检测到回复，可能是 AI 响应过慢或 DOM 结构已变更。\n\n可以点击下方的重新同步完整回复按钮尝试恢复。'
+  if (normalized === 'timeout') return '⚠️ 回复超时了。\n\n可以点击下方的重新回复按钮再试一次。'
+  if (normalized === 'site_blocked') return '⚠️ 站点阻断，请检查登录状态或处理 Cookie 弹窗。\n\n处理完成后点击重新回复。'
   if (/超时|timeout/i.test(reason)) return '回复超时了。\n\n可以点击下方的重新回复按钮再试一次。'
   return `回复失败：${reason}\n\n可以点击下方的重新回复按钮再试一次。`
 }

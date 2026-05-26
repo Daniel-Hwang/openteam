@@ -40,9 +40,9 @@ export function createReplyObserver(options: {
   let replyPollingTimer: number | null = null
   let replyPollingInFlight = false
   const replyTracker = createReplyTracker()
-  const replyTimeout = createReplyTimeout(REPLY_TIMEOUT_MS, messageId => {
+  const replyTimeout = createReplyTimeout(REPLY_TIMEOUT_MS, (messageId, failureReason) => {
     const assignedRole = roleSession.getAssignedRole()
-    log.warn('reply-timeout', { messageId, roleId: assignedRole?.roleId, roleName: assignedRole?.roleName })
+    log.warn('reply-timeout', { messageId, roleId: assignedRole?.roleId, roleName: assignedRole?.roleName, reason: failureReason })
 
     const replyAttemptId = roleSession.getActiveReplyAttemptId()
     const activePrompt = roleSession.getActivePrompt()
@@ -67,10 +67,10 @@ export function createReplyObserver(options: {
         type: 'TEAM_ROLE_STATUS',
         status: 'error',
         ...statusIdentity,
-        error: `等待 ${siteAdapter.id} 回复超时（${Math.round(REPLY_TIMEOUT_MS / 1000)} 秒）`,
+        error: failureReason,
       })
       .catch(error => log.warn('reply-timeout:status-failed', { error: error instanceof Error ? error.message : String(error) }))
-    options.reportRoleError(messageId, `等待 ${siteAdapter.id} 回复超时（${Math.round(REPLY_TIMEOUT_MS / 1000)} 秒）`, undefined, undefined, replyAttemptId)
+    options.reportRoleError(messageId, failureReason, undefined, undefined, replyAttemptId)
     clearReplyPolling()
   })
 

@@ -1,4 +1,4 @@
-import type { ChatSiteAdapter, ConversationSnapshot } from './types'
+import type { ChatSiteAdapter, ConversationSnapshot, SiteStatusInfo } from './types'
 import { keepDeepestResponseContainers } from '../responseContainers'
 import { findClickableCopyButton, readResponseTextFromCopyAction } from './clipboardCopy'
 import { readEditorText, setContentEditableText } from './contentEditable'
@@ -18,6 +18,8 @@ const CLAUDE_SELECTORS = {
   response: '.font-claude-response',
   copyButton:
     'button[data-testid="action-bar-copy"], [role="group"][aria-label="Message actions"] button[aria-label="Copy"], button[aria-label="Copy"], button[aria-label="复制"]',
+  blocker: '[role="dialog"], .cookie-banner, [aria-label*="Cookie"], [aria-label*="Consent"]',
+  loginOverlay: 'div[role="dialog"] button[aria-label*="Sign in"], div[role="dialog"] button[aria-label*="登录"]',
 }
 
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'BUTTON', 'TEXTAREA', 'SVG'])
@@ -79,6 +81,7 @@ export function createClaudeAdapter(options: ClaudeAdapterOptions = {}): ChatSit
     readResponseMarkdown: extractMarkdownFromDom,
     findResponseContainer,
     isGenerating: isClaudeGenerating,
+    checkStatus: checkClaudeStatus,
     stopGenerating: stopClaudeGenerating,
     fillAndSend,
     collectPromptDiagnostics,
@@ -161,4 +164,29 @@ async function stopClaudeGenerating(): Promise<boolean> {
 
 function findClaudeStopButton(): HTMLButtonElement | undefined {
   return [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => buttonLabelMatches(button, /stop|stopping|停止|中止/) && isClickableButton(button))
+}
+
+function checkClaudeStatus(): SiteStatusInfo {
+  const timestamp = Date.now()
+
+  if (location.pathname.includes('/login') || location.pathname.includes('/auth')) {
+    return { status: 'unauthorized', detail: 'Session expired, please login', timestamp }
+  }
+
+  const editorExists = !!document.querySelector(CLAUDE_SELECTORS.editor)
+  const blockerExists = !!document.querySelector(CLAUDE_SELECTORS.blocker)
+
+  if (!editorExists && blockerExists) {
+    return { status: 'blocked', detail: 'Cookie banner or overlay blocking access', timestamp }
+  }
+
+  if (document.querySelector(CLAUDE_SELECTORS.loginOverlay)) {
+    return { status: 'unauthorized', detail: 'Login required', timestamp }
+  }
+
+  if (isClaudeGenerating()) {
+    return { status: 'generating', detail: 'Claude is thinking...', timestamp }
+  }
+
+  return { status: 'ready', timestamp }
 }

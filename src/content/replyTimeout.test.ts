@@ -10,7 +10,7 @@ describe('createReplyTimeout', () => {
     timeout.arm('msg-1')
     vi.advanceTimersByTime(1000)
 
-    expect(onTimeout).toHaveBeenCalledWith('msg-1')
+    expect(onTimeout).toHaveBeenCalledWith('msg-1', 'RESPONSE_NOT_FOUND')
     vi.useRealTimers()
   })
 

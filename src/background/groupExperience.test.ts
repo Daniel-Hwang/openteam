@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CUSTOM_ROLE_TEMPLATES } from '../group/defaultCustomRoleTemplates'
-import type { GroupChat, GroupMessage, GroupRole, OpenTeamStore, RoleTemplate } from '../group/types'
+import type { GroupChat, GroupMessage, GroupRole, OpenTeamStore, OrchestrationFlow, RoleTemplate } from '../group/types'
 
 const defaultCustomTemplateIds = DEFAULT_CUSTOM_ROLE_TEMPLATES.map(template => template.id)
 
@@ -782,6 +782,7 @@ describe('background group chat experience handlers', () => {
       mode: 'collaborative',
       messageIds: ['msg-1'],
       nextMessageSeq: 2,
+      requireManualMention: true,
     }
     store.chatOrder = ['chat-1']
     store.rolesById['role-1'] = makeRole('chat-1', 'role-1', '调查记者', {
@@ -816,6 +817,7 @@ describe('background group chat experience handlers', () => {
       messageIds: [],
       nextMessageSeq: 1,
       status: 'initializing',
+      requireManualMention: true,
     })
     expect(duplicated.chat.id).not.toBe('chat-1')
     expect(duplicated.store.currentChatId).toBe(duplicated.chat.id)
@@ -841,6 +843,79 @@ describe('background group chat experience handlers', () => {
     expect(copiedReporter.lastReplyAt).toBeUndefined()
     expect(duplicated.store.messagesById['msg-1']).toBeDefined()
     expect(duplicated.store.chatsById['chat-1'].messageIds).toEqual(['msg-1'])
+  })
+
+  it('duplicates effective model bindings and remaps orchestration flows to copied roles', async () => {
+    const store = makeStore()
+    store.settings.defaultChatSite = 'gemini'
+    store.currentChatId = 'chat-1'
+    store.chatsById['chat-1'] = {
+      ...makeChat('chat-1', ['role-1', 'role-2']),
+      name: '编排写作组',
+      mode: 'collaborative',
+    }
+    store.chatOrder = ['chat-1']
+    store.roleTemplatesById['template-site'] = {
+      ...makeTemplate('template-site', '站点模板', '站点模板人设'),
+      defaultChatSite: 'chatgpt',
+    }
+    store.roleTemplatesById['template-external'] = {
+      ...makeTemplate('template-external', 'API 模板', 'API 模板人设'),
+      defaultModelSource: 'external',
+      defaultExternalModelId: 'external-model-1',
+    }
+    store.rolesById['role-1'] = makeRole('chat-1', 'role-1', '写手', { templateId: 'template-site' })
+    store.rolesById['role-2'] = makeRole('chat-1', 'role-2', '审核', { templateId: 'template-external' })
+    const flow: OrchestrationFlow = {
+      id: 'flow-1',
+      chatId: 'chat-1',
+      name: '写作流程',
+      stages: [
+        { id: 'stage-1', kind: 'roles', name: '写初稿', roleIds: ['role-1'], position: { x: 10, y: 20 } },
+        { id: 'stage-2', kind: 'review', name: '审核', roleIds: ['role-2'], review: { reviewerRoleIds: ['role-2'], instructions: '检查事实' } },
+      ],
+      graph: {
+        stageNodes: [
+          { id: 'stage-1', kind: 'roles', name: '写初稿', roleIds: ['role-1'], position: { x: 10, y: 20 } },
+          { id: 'stage-2', kind: 'review', name: '审核', roleIds: ['role-2'], review: { reviewerRoleIds: ['role-2'], instructions: '检查事实' } },
+        ],
+        edges: [{ sourceStageId: 'stage-1', targetStageId: 'stage-2', vertices: [{ x: 30, y: 40 }] }],
+      },
+      autoPlanHistory: [{ id: 'history-1', role: 'user', content: '写一篇文章', createdAt: 2 }],
+      maxRounds: 2,
+      createdAt: 2,
+      updatedAt: 3,
+    }
+    store.orchestrationFlowsById[flow.id] = flow
+    store.orchestrationFlowOrderByChatId['chat-1'] = [flow.id]
+    const harness = await setupBackground(store)
+
+    const duplicated = await harness.invoke({ type: 'GROUP_CHAT_DUPLICATE', chatId: 'chat-1' }) as { ok: boolean; chat: GroupChat; roles: GroupRole[]; store: OpenTeamStore }
+
+    const [copiedWriter, copiedReviewer] = duplicated.roles
+    expect(copiedWriter).toMatchObject({ modelSource: 'site', chatSite: 'chatgpt' })
+    expect(copiedWriter.externalModelId).toBeUndefined()
+    expect(copiedReviewer).toMatchObject({ modelSource: 'external', externalModelId: 'external-model-1' })
+    expect(copiedReviewer.chatSite).toBeUndefined()
+
+    const copiedFlowIds = duplicated.store.orchestrationFlowOrderByChatId[duplicated.chat.id]
+    expect(copiedFlowIds).toHaveLength(1)
+    const copiedFlow = duplicated.store.orchestrationFlowsById[copiedFlowIds[0]]
+    expect(copiedFlow).toMatchObject({
+      chatId: duplicated.chat.id,
+      name: '写作流程',
+      maxRounds: 2,
+    })
+    expect(copiedFlow.id).not.toBe(flow.id)
+    expect(copiedFlow.stages[0].roleIds).toEqual([copiedWriter.id])
+    expect(copiedFlow.stages[1].roleIds).toEqual([copiedReviewer.id])
+    expect(copiedFlow.stages[1].review?.reviewerRoleIds).toEqual([copiedReviewer.id])
+    expect(copiedFlow.graph?.stageNodes[0].roleIds).toEqual([copiedWriter.id])
+    expect(copiedFlow.graph?.stageNodes[1].roleIds).toEqual([copiedReviewer.id])
+    expect(copiedFlow.graph?.stageNodes[1].review?.reviewerRoleIds).toEqual([copiedReviewer.id])
+    expect(copiedFlow.graph?.edges).toEqual(flow.graph?.edges)
+    expect(copiedFlow.autoPlanHistory).toEqual(flow.autoPlanHistory)
+    expect(duplicated.store.orchestrationFlowsById[flow.id].stages[0].roleIds).toEqual(['role-1'])
   })
 
   it('deletes a chat with its roles, messages, read state, and runtime bindings', async () => {

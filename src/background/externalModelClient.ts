@@ -45,9 +45,22 @@ function normalizeBaseUrl(url: string, format: ExternalModelFormat): string {
 }
 
 export function createExternalModelClient(fetchImpl: typeof fetch = fetch): ExternalModelClient {
+  let lastResponseMetadata: Record<string, unknown> = {}
+
+  const wrappedFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const response = await fetchImpl(input, init)
+    lastResponseMetadata = {
+      url: input instanceof Request ? input.url : String(input),
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+    }
+    return response
+  }
+
   return {
     stream(input) {
-      return streamExternalModel(input, fetchImpl)
+      return streamExternalModel(input, wrappedFetch)
     },
     async complete(input) {
       const controller = new AbortController()
@@ -55,9 +68,14 @@ export function createExternalModelClient(fetchImpl: typeof fetch = fetch): Exte
 
       try {
         let content = ''
-        const stream = streamExternalModel({ ...input, abortSignal: controller.signal }, fetchImpl)
+        const normalizedUrl = normalizeBaseUrl(input.model.baseUrl, input.model.format)
+        const stream = streamExternalModel({ ...input, abortSignal: controller.signal }, wrappedFetch)
         for await (const chunk of stream) content += chunk
-        if (!content.trim()) throw new ExternalModelError('外部模型返回内容为空')
+        if (!content.trim()) {
+          throw new ExternalModelError(
+            `外部模型返回内容为空 (URL: ${normalizedUrl}, Model: ${input.model.modelName}, Response: ${JSON.stringify(lastResponseMetadata)})`
+          )
+        }
         return { content }
       } catch (error: any) {
         if (error.name === 'AbortError') {

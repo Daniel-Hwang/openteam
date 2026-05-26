@@ -164,6 +164,7 @@ const chatHeaderView = createChatHeaderView({
   getCurrentChat,
   getCurrentRoles,
   getCurrentMessages,
+  runCommand,
 })
 const renderChatHeader = chatHeaderView.renderChatHeader
 const chatListView = createChatListView({
